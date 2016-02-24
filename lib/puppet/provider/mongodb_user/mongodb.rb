@@ -5,17 +5,26 @@ Puppet::Type.type(:mongodb_user).provide(:mongodb, :parent => Puppet::Provider::
 
   defaultfor :kernel => 'Linux'
 
-  def self.instances
+  def self.instances(admin_username = nil, admin_password = nil)
     require 'json'
 
     if db_ismaster
       if mongo_24?
-        dbs = JSON.parse mongo_eval('printjson(db.getMongo().getDBs()["databases"].map(function(db){return db["name"]}))') || 'admin'
+        if auth_enabled
+          dbs = JSON.parse mongo_eval('printjson(db.getMongo().getDBs()["databases"].map(function(db){return db["name"]}))',
+            'admin', 10, nil, admin_username, admin_password) || 'admin'
+        else
+          dbs = JSON.parse mongo_eval('printjson(db.getMongo().getDBs()["databases"].map(function(db){return db["name"]}))') || 'admin'
+        end
 
         allusers = []
 
         dbs.each do |db|
-          users = JSON.parse mongo_eval('printjson(db.system.users.find().toArray())', db)
+          if auth_enabled
+            users = JSON.parse mongo_eval('printjson(db.system.users.find().toArray())', db, 10, nil, admin_username, admin_password)
+          else
+            users = JSON.parse mongo_eval('printjson(db.system.users.find().toArray())', db)
+          end
 
           allusers += users.collect do |user|
               new(:name          => user['_id'],
@@ -28,7 +37,11 @@ Puppet::Type.type(:mongodb_user).provide(:mongodb, :parent => Puppet::Provider::
         end
         return allusers
       else
-        users = JSON.parse mongo_eval('printjson(db.system.users.find().toArray())')
+        if auth_enabled
+          users = JSON.parse mongo_eval('printjson(db.system.users.find().toArray())', 'admin', 10, nil, admin_username, admin_password)
+        else
+          users = JSON.parse mongo_eval('printjson(db.system.users.find().toArray())')
+        end
 
         users.collect do |user|
             new(:name          => user['_id'],
@@ -47,10 +60,14 @@ Puppet::Type.type(:mongodb_user).provide(:mongodb, :parent => Puppet::Provider::
 
   # Assign prefetched users based on username and database, not on id and name
   def self.prefetch(resources)
-    users = instances
-    resources.each do |name, resource|
-      if provider = users.find { |user| user.username == resource[:username] and user.database == resource[:database] }
-        resources[name].provider = provider
+    if resources.size > 0
+      Puppet.debug "Using #{resources.values[0][:admin_username]} for admin"
+      firstResource = resources.values[0]
+      users = instances(firstResource[:admin_username], firstResource[:admin_password])
+      resources.each do |name, resource|
+        if provider = users.find { |user| user.username == resource[:username] and user.database == resource[:database] }
+          resources[name].provider = provider
+        end
       end
     end
   end

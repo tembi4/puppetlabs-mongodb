@@ -44,6 +44,18 @@ class Puppet::Provider::Mongodb < Puppet::Provider
     ipv6
   end
 
+  def self.mongo_auth_cmd(db, host, admin_username, admin_password, cmd)
+    if ipv6_is_enabled
+      out = mongo([db, '--quiet', '--ipv6', '--host', host, 
+                  '--username', admin_username, '--password', admin_password,
+                  '--authenticationDatabase', 'admin', '--eval', cmd])
+    else
+      out = mongo([db, '--quiet', '--host', host, 
+                  '--username', admin_username, '--password', admin_password,
+                  '--authenticationDatabase', 'admin', '--eval', cmd])
+    end
+  end
+
   def self.mongo_cmd(db, host, cmd)
     if ipv6_is_enabled
       out = mongo([db, '--quiet', '--ipv6', '--host', host, '--eval', cmd])
@@ -139,7 +151,8 @@ class Puppet::Provider::Mongodb < Puppet::Provider
   end
 
   # Mongo Command Wrapper
-  def self.mongo_eval(cmd, db = 'admin', retries = 10, host = nil)
+
+  def self.mongo_eval(cmd, db = 'admin', retries = 10, host = nil, admin_username = nil, admin_password = nil)
     retry_count = retries
     retry_sleep = 3
     if mongorc_file
@@ -150,9 +163,17 @@ class Puppet::Provider::Mongodb < Puppet::Provider
     retry_count.times do |n|
       begin
         if host
-          out = mongo_cmd(db, host, cmd)
+          if admin_username
+            out = mongo_auth_cmd(db, host, admin_username, admin_password, cmd)
+          else
+            out = mongo_cmd(db, host, cmd)
+          end
         else
-          out = mongo_cmd(db, get_conn_string, cmd)
+          if admin_username
+            out = mongo_auth_cmd(db, get_conn_string, admin_username, admin_password, cmd)
+          else
+            out = mongo_cmd(db, get_conn_string, cmd)
+          end
         end
       rescue => e
         Puppet.debug "Request failed: '#{e.message}' Retry: '#{n}'"

@@ -58,6 +58,14 @@ Puppet::Type.newtype(:mongodb_user) do
     newvalue(/^\w+$/)
   end
 
+  newparam(:admin_username) do
+      desc "The username of the db admin. It's used if auth is on"
+    end
+  
+    newparam(:admin_password) do
+      desc "The password for the db admin. It's used if auth is on"
+    end
+
   autorequire(:package) do
     'mongodb_client'
   end

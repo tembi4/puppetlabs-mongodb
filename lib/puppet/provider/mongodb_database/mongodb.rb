@@ -5,22 +5,34 @@ Puppet::Type.type(:mongodb_database).provide(:mongodb, :parent => Puppet::Provid
 
   defaultfor :kernel => 'Linux'
 
-  def self.instances
+  def self.instances(admin_username = nil, admin_password = nil)
     require 'json'
-    dbs = JSON.parse mongo_eval('printjson(db.getMongo().getDBs())')
+
+    if auth_enabled
+      Puppet.debug 'Getting list of databases with auth ON'
+      dbs = JSON.parse mongo_eval('printjson(db.getMongo().getDBs())', 
+                                  'admin', 10, nil, admin_username, admin_password)
+    else
+      dbs = JSON.parse mongo_eval('printjson(db.getMongo().getDBs())')
+    end
 
     dbs['databases'].collect do |db|
       new(:name   => db['name'],
           :ensure => :present)
     end
+
   end
 
   # Assign prefetched dbs based on name.
   def self.prefetch(resources)
-    dbs = instances
-    resources.keys.each do |name|
-      if provider = dbs.find { |db| db.name == name }
-        resources[name].provider = provider
+    if resources.size > 0
+      Puppet.debug "Using #{resources.values[0][:admin_username]} for admin"
+      firstResource = resources.values[0]
+      dbs = instances(firstResource[:admin_username], firstResource[:admin_password])
+      resources.keys.each do |name|
+        if provider = dbs.find { |db| db.name == name }
+          resources[name].provider = provider
+        end
       end
     end
   end
